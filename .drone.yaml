@@ -1,0 +1,94 @@
+---
+workspace:
+  base: /tmp
+  path: src/github.com/teltech/test-repo
+image_pull_secrets:
+- dockerconfigjson
+pipeline:
+  build:
+    image: us.gcr.io/teltech-analytics/vaporizer-buildbox:latest
+    commands:
+      - ./pipeline/build.bash
+    when:
+      branch: [master, develop, feature/*]
+      event: [push, pull_request]
+
+  # master
+  bake-master:
+    image: plugins/gcr
+    registry: gcr.io
+    repo: teltech-analytics/vaporizer
+    dockerfile: Dockerfile
+    tags:
+      - stable
+      - "${DRONE_COMMIT}"
+    secrets:
+      - source: google_credentials
+        target: token
+    when:
+      branch: master
+      event: push
+
+  # develop
+  bake-develop:
+    image: plugins/gcr
+    registry: gcr.io
+    repo: teltech-analytics/vaporizer
+    dockerfile: Dockerfile
+    tags:
+      - latest
+      - "${DRONE_COMMIT}"
+    secrets:
+      - source: google_credentials
+        target: token
+    when:
+      branch: develop
+      event: push
+
+  # feature
+  bake-feature:
+    image: plugins/gcr
+    registry: gcr.io
+    repo: teltech-analytics/vaporizer
+    dockerfile: Dockerfile
+    tags:
+      - ${DRONE_COMMIT_BRANCH/\//-}
+      - "${DRONE_COMMIT}"
+    secrets:
+      - source: google_credentials
+        target: token
+    when:
+      branch: feature/*
+      event: push
+
+  buildbox:
+    image: plugins/gcr
+    registry: gcr.io
+    repo: teltech-analytics/vaporizer-buildbox
+    dockerfile: pipeline/Dockerfile_buildbox
+    tags:
+      - latest
+      - "${DRONE_COMMIT}"
+    secrets:
+      - source: google_credentials
+        target: token
+    when:
+      branch: buildbox
+      event: push
+
+  # slack notification
+  slack-msg:
+    image: plugins/slack
+    webhook:
+      from_secret: slack_webhook
+    channel: teltech_data_eng_alerts
+#    data-eng-alerts
+    template: >
+      {{#success build.status}}
+        :white_check_mark: Build {{build.number}} for repo {{repo.name}} on branch {{build.branch}} succeeded! :white_check_mark:
+      {{else}}
+        :red_circle: Build {{build.number}} for repo {{repo.name}} on branch {{build.branch}} failed! <@here> :red_circle:
+      {{/success}}
+    when:
+      status: [ success, failure ]
+      event: [ push, pull_request ]
